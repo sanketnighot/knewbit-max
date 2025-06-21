@@ -32,6 +32,7 @@ export async function recommendCourses(
         user_question: userQuestion,
       }),
     });
+    console.log("🔍 Response:", response);
 
     console.log("📡 Response status:", response.status);
     console.log(

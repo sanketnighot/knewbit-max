@@ -80,36 +80,69 @@ def update_progress(request_id: str, message: str) -> None:
 
 
 async def upload_and_process_video(file_path: str, request_id: str) -> Optional[Any]:
-    update_progress(request_id, f"Uploading file: {file_path}")
-    # try:
-    # Upload file using the standalone genai.upload_file method
-    video_file = await run_in_threadpool(
-        lambda: genai.upload_file(
-            path=file_path, display_name=os.path.basename(file_path)
-        )
-    )
-    update_progress(
-        request_id, f"Upload accepted: {video_file.name}, waiting for processing..."
-    )
+    # Step 1: Initial validation
+    update_progress(request_id, "Starting video upload and processing...")
+    update_progress(request_id, f"Validating file path: {file_path}")
+    if not os.path.exists(file_path):
+        update_progress(request_id, f"Error: File not found at {file_path}")
+        return None
 
-    while True:
+    # Step 2: File upload
+    update_progress(request_id, f"Initiating file upload: {file_path}")
+    try:
         video_file = await run_in_threadpool(
-            lambda: genai.get_file(name=video_file.name)
-        )
-        if video_file.state.name == "ACTIVE":
-            update_progress(request_id, "File is ACTIVE and ready.")
-            return video_file
-        if video_file.state.name == "FAILED":
-            error = getattr(video_file, "error", {}).get(
-                "message", "Unknown processing error"
+            lambda: genai.upload_file(
+                path=file_path, display_name=os.path.basename(file_path)
             )
-            update_progress(request_id, f"Processing FAILED: {error}")
-            return None
+        )
         update_progress(
             request_id,
-            f"Processing... Current state: {video_file.state.name}. Retrying in 10s.",
+            f"Upload successful - File name: {video_file.name}, Size: {os.path.getsize(file_path)} bytes",
         )
-        await asyncio.sleep(10)
+    except Exception as e:
+        update_progress(request_id, f"Upload failed: {str(e)}")
+        return None
+
+    # Step 3: Processing monitoring
+    update_progress(request_id, "Beginning processing status monitoring...")
+    attempt = 1
+    while True:
+        update_progress(
+            request_id, f"Checking processing status (Attempt {attempt})..."
+        )
+        try:
+            video_file = await run_in_threadpool(
+                lambda: genai.get_file(name=video_file.name)
+            )
+
+            # Step 4a: Check for successful completion
+            if video_file.state.name == "ACTIVE":
+                update_progress(request_id, "Processing completed successfully")
+                update_progress(request_id, "File is ACTIVE and ready for use")
+                return video_file
+
+            # Step 4b: Check for failure
+            if video_file.state.name == "FAILED":
+                error = getattr(video_file, "error", {}).get(
+                    "message", "Unknown processing error"
+                )
+                update_progress(request_id, f"Processing failed with error: {error}")
+                return None
+
+            # Step 4c: Still processing
+            update_progress(
+                request_id,
+                f"Current processing state: {video_file.state.name} (Attempt {attempt})",
+            )
+            update_progress(
+                request_id, "Waiting 10 seconds before next status check..."
+            )
+            await asyncio.sleep(10)
+            attempt += 1
+
+        except Exception as e:
+            update_progress(request_id, f"Error checking processing status: {str(e)}")
+            return None
 
     # except Exception as e:
     #     update_progress(request_id, f"Upload error: {str(e)}")
