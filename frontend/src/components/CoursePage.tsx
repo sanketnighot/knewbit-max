@@ -353,7 +353,9 @@ export const CoursePage = ({
               {activeTab === "quiz" && (
                 <CourseQuiz courseDetails={courseDetails} />
               )}
-              {activeTab === "chat" && <ChatInterface />}
+              {activeTab === "chat" && (
+                <ChatInterface courseDetails={courseDetails} />
+              )}
             </div>
 
             {/* Sidebar */}

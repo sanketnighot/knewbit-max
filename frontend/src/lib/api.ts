@@ -190,3 +190,82 @@ export async function getCourseDetails(slug: string): Promise<CourseDetail> {
     throw error;
   }
 }
+
+export interface ChatMessage {
+  role: "user" | "ai";
+  message: string;
+}
+
+export interface TutorChatRequest {
+  user_message: string;
+  course_id: string;
+  chat_history: ChatMessage[];
+}
+
+export interface TutorChatResponse {
+  response: string;
+  status: string;
+}
+
+export async function aiTutorChat(
+  userMessage: string,
+  courseId: string,
+  chatHistory: ChatMessage[]
+): Promise<TutorChatResponse> {
+  const url = `${BACKEND_URL}/ai-tutor`;
+  console.log("🔍 Calling AI Tutor API:", url);
+
+  // Get JWT token from cookies
+  const jwt = Cookies.get("knewbit_jwt");
+  console.log("🔑 JWT token exists for AI tutor:", !!jwt);
+
+  if (!jwt) {
+    throw new Error("Authentication required. Please sign in first.");
+  }
+
+  const requestData: TutorChatRequest = {
+    user_message: userMessage,
+    course_id: courseId,
+    chat_history: chatHistory,
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify(requestData),
+    });
+
+    console.log("📡 AI Tutor Response status:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("❌ AI Tutor API Error:", errorText);
+
+      if (response.status === 429) {
+        throw new Error(
+          "Too many requests. Please wait a moment before asking another question."
+        );
+      }
+
+      throw new Error(
+        `Failed to get AI tutor response: ${response.status} ${response.statusText} - ${errorText}`
+      );
+    }
+
+    const data = await response.json();
+    console.log("✅ AI Tutor Success:", data);
+    return data;
+  } catch (error) {
+    console.error("🚨 AI Tutor API Call Failed:", error);
+    if (error instanceof TypeError && error.message.includes("fetch")) {
+      throw new Error(
+        `Network error: Cannot connect to AI tutor API at ${url}. Is the backend running?`
+      );
+    }
+    throw error;
+  }
+}
