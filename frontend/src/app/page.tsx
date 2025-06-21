@@ -86,12 +86,10 @@ export default function Home() {
         onClose={() => setShowAuthModal(false)}
       />
 
-      {/* Header with User Profile */}
-      {knewbitUser && (
-        <div className="absolute top-8 right-8 z-20">
-          <UserProfile />
-        </div>
-      )}
+      {/* Header with User Profile / Sign In */}
+      <div className="absolute top-8 right-8 z-20">
+        <UserProfile onSignInClick={() => setShowAuthModal(true)} />
+      </div>
 
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 py-12">
         {/* Header Section */}
@@ -228,7 +226,9 @@ e.g., 'I want to become a DevOps engineer, focusing on containerization with Doc
 
                     <div className="relative flex items-center justify-center space-x-3">
                       <span>
-                        {knewbitUser ? "Generate Course" : "Sign In & Generate"}
+                        {knewbitUser
+                          ? "Generate Course"
+                          : "Sign In to Generate Course"}
                       </span>
                       <svg
                         className="w-5 h-5 transform group-hover:translate-x-1 transition-transform duration-200"

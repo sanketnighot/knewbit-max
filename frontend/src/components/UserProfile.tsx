@@ -3,17 +3,48 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { useState } from "react";
 
-export const UserProfile = () => {
+interface UserProfileProps {
+  onSignInClick: () => void;
+}
+
+export const UserProfile = ({ onSignInClick }: UserProfileProps) => {
   const { knewbitUser, signOut, loading } = useAuth();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-
-  if (!knewbitUser) return null;
 
   const handleSignOut = async () => {
     await signOut();
     setIsDropdownOpen(false);
   };
 
+  // Show sign-in button when user is not authenticated
+  if (!knewbitUser) {
+    return (
+      <button
+        onClick={onSignInClick}
+        className="group relative flex items-center gap-2 px-4 py-2 bg-slate-900/90 hover:bg-slate-800 border border-slate-700/50 hover:border-cyan-400/50 rounded-lg transition-all duration-300 backdrop-blur-sm"
+      >
+        <div className="absolute inset-0 bg-cyan-400/5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+        <svg
+          className="w-4 h-4 text-slate-400 group-hover:text-cyan-400 transition-colors duration-200"
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+          />
+        </svg>
+        <span className="relative text-sm font-medium text-slate-300 group-hover:text-white transition-colors duration-200">
+          Sign In
+        </span>
+      </button>
+    );
+  }
+
+  // Show user profile when authenticated
   return (
     <div className="relative">
       <button

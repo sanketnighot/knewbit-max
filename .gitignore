@@ -1,2 +1,4 @@
 .cursor/
 /Project/
+.env
+.env.local
