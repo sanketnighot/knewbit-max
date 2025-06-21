@@ -8,7 +8,7 @@ on:
 jobs:
   backend-deploy:
     name: Deploy Backend
-    runs-on: ubuntu-latestx
+    runs-on: ubuntu-latest
     steps:
 
       - name: Checkout Code
@@ -48,7 +48,7 @@ jobs:
 
   frontend-deploy:
     name: Deploy frontend
-    runs-on: ubuntu-latestx
+    runs-on: ubuntu-latest
     steps:
 
       - name: Checkout Code
