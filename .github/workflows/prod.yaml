@@ -33,7 +33,7 @@ jobs:
         env:
           GOOGLE_PROJECT: ${{ secrets.GOOGLE_PROJECT }}
         run: |
-          docker build -t asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-be/knewbit-max-be:latest .
+          docker build -t asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-be/knewbit-max-be:latest ./backend -f ./backend/dockerfile
           docker push asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-be/knewbit-max-be:latest
 
       - name: Deploy to Google Cloud Run
@@ -73,7 +73,7 @@ jobs:
         env:
           GOOGLE_PROJECT: ${{ secrets.GOOGLE_PROJECT }}
         run: |
-          docker build -t asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-frontend/knewbit-max-fe:latest .
+          docker build -t asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-frontend/knewbit-max-fe:latest ./frontend -f ./frontend/dockerfile
           docker push asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-frontend/knewbit-max-fe:latest
 
       - name: Deploy to Google Cloud Run
