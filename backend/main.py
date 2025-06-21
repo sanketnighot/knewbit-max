@@ -24,8 +24,13 @@ from pydantic import BaseModel
 from langgraph.graph import StateGraph, END
 from langchain_core.runnables import RunnableLambda
 import dotenv
+import google.generativeai as geneai
+
 
 dotenv.load_dotenv()
+
+geneai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+
 
 # --- ENV ---
 client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
@@ -34,6 +39,7 @@ KNEWBIT_API_URL = os.getenv("KNEWBIT_API_URL")
 # --- API Endpoints ---
 ENROLLED_COURSES_API = f"{KNEWBIT_API_URL}/api/user/enrolled-courses"
 ALL_COURSES_API = f"{KNEWBIT_API_URL}/courses"
+MODEL_NAME = "gemini-2.5-flash-preview-05-20"
 
 # Create FastAPI application with metadata for Swagger
 app = FastAPI(
@@ -43,6 +49,8 @@ app = FastAPI(
     docs_url="/docs",  # Swagger UI
     redoc_url="/redoc",  # ReDoc documentation
 )
+
+video_cache = VideoCache(max_size=10)
 
 # Configure CORS for frontend integration
 app.add_middleware(
@@ -80,11 +88,20 @@ async def health_check():
 
 @app.post("/dub")
 async def dub_video(
-    youtube_url: str = Form(None),
-    file: UploadFile = File(None),
+    youtube_url: Optional[str] = Form(None),
+    file: Optional[UploadFile] = File(None),
     target_language: str = Form(...),
     lang_code: str = Form(...),
 ):
+    """
+    Video dubbing endpoint that ensures MP4 output format.
+
+    Fixes applied for MP4 generation:
+    1. yt-dlp configured to prefer MP4 formats and force recode if needed
+    2. Input videos converted to H.264/MP4 format before processing
+    3. FFmpeg output forced to use libx264 codec and MP4 container
+    4. Added movflags +faststart for web optimization
+    """
     temp_filename = None
     try:
         # --- Download from YouTube using yt-dlp CLI ---
@@ -94,9 +111,11 @@ async def dub_video(
             command = [
                 "yt-dlp",
                 "-f",
-                "bv+ba/best",
+                "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/best[ext=mp4]/best",  # Prefer MP4 formats
                 "--merge-output-format",
                 "mp4",
+                "--recode-video",
+                "mp4",  # Force recode to MP4 if needed
                 "-o",
                 temp_filename,
                 youtube_url,
@@ -107,11 +126,17 @@ async def dub_video(
             if result.returncode != 0:
                 raise RuntimeError(f"yt-dlp failed: {result.stderr.decode()}")
 
+            # Ensure downloaded file is in proper MP4 format
+            temp_filename = await ensure_mp4_format(temp_filename)
+
         # --- Save uploaded file ---
         elif file:
             temp_filename = f"temp_{uuid.uuid4()}_{file.filename}"
             with open(temp_filename, "wb") as f_out:
                 shutil.copyfileobj(file.file, f_out)
+
+            # Ensure uploaded file is in MP4 format
+            temp_filename = await ensure_mp4_format(temp_filename)
         else:
             return JSONResponse(
                 status_code=400,
@@ -129,12 +154,25 @@ async def dub_video(
         )
 
         transcript_data = clean_json_output(result_string)
+        print("result_string", result_string)
         segments = transcript_data.get("segments", [])
         if not segments:
             raise ValueError("No segments found in transcript.")
 
         output_path = f"dubbed_output_{uuid.uuid4()}.mp4"
         await create_dubbed_video_fast(temp_filename, segments, lang_code, output_path)
+
+        # Validate that output is actually MP4 format
+        try:
+            probe = ffmpeg.probe(output_path)
+            video_stream = next(
+                (s for s in probe["streams"] if s["codec_type"] == "video"), None
+            )
+            if video_stream:
+                codec = video_stream.get("codec_name", "unknown")
+                print(f"Final output video codec: {codec}")
+        except Exception as e:
+            print(f"Warning: Could not verify output format: {e}")
 
         return FileResponse(
             output_path, media_type="video/mp4", filename="dubbed_video.mp4"
@@ -146,8 +184,75 @@ async def dub_video(
     finally:
         if temp_filename and os.path.exists(temp_filename):
             os.remove(temp_filename)
-        if output_path and os.path.exists(output_path):
-            os.remove(output_path)
+
+
+async def ensure_mp4_format(input_path):
+    """
+    Ensure the video file is in MP4 format with H.264 codec.
+    If not, convert it to MP4. This fixes the .webm issue by forcing proper MP4 output.
+    """
+    try:
+        # Check if the file is already in proper MP4 format
+        probe = ffmpeg.probe(input_path)
+        video_stream = next(
+            (s for s in probe["streams"] if s["codec_type"] == "video"), None
+        )
+
+        if video_stream:
+            codec_name = video_stream.get("codec_name", "unknown")
+            print(f"Input video codec: {codec_name}, file: {input_path}")
+
+        if (
+            video_stream
+            and video_stream.get("codec_name") == "h264"
+            and input_path.lower().endswith(".mp4")
+        ):
+            # Already in proper MP4 format
+            print(f"Video already in MP4 H.264 format: {input_path}")
+            return input_path
+
+        # Convert to MP4
+        output_path = f"converted_{uuid.uuid4()}.mp4"
+        print(f"Converting {input_path} to MP4 format: {output_path}")
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i",
+            input_path,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "fast",
+            "-crf",
+            "23",
+            "-c:a",
+            "aac",
+            "-f",
+            "mp4",
+            "-movflags",
+            "+faststart",
+            output_path,
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, text=True)
+
+        if result.returncode != 0:
+            print(f"MP4 conversion error: {result.stderr}")
+            # If conversion fails, return original file
+            return input_path
+
+        # Remove original file and return converted one
+        if os.path.exists(input_path):
+            os.remove(input_path)
+
+        print(f"Successfully converted to MP4: {output_path}")
+        return output_path
+
+    except Exception as e:
+        print(f"Error in ensure_mp4_format: {e}")
+        # Return original file if anything goes wrong
+        return input_path
 
 
 async def create_dubbed_video_fast(video_path, segments, lang_code, output_path):
@@ -240,17 +345,25 @@ def build_and_run_ffmpeg_command(video_path, tts_results, output_path):
     cmd.extend(["-map", "0:v"])  # Original video
     cmd.extend(["-map", final_audio])  # Mixed audio
 
-    # Output settings for speed
+    # Output settings for MP4 format
     cmd.extend(
         [
             "-c:v",
-            "copy",  # Don't re-encode video
+            "libx264",  # Force H.264 codec for MP4 compatibility
+            "-preset",
+            "fast",  # Fast encoding preset
+            "-crf",
+            "23",  # Good quality setting
             "-c:a",
             "aac",  # Audio codec
             "-b:a",
             "128k",  # Audio bitrate
             "-ac",
             "2",  # Stereo output
+            "-f",
+            "mp4",  # Force MP4 container format
+            "-movflags",
+            "+faststart",  # Enable fast start for web playback
             "-shortest",  # Match shortest stream
             output_path,
         ]
@@ -400,7 +513,7 @@ def create_audio_timeline_direct(video_path, tts_results, output_path):
             check=True,
         )
 
-        # Combine with video (final step)
+        # Combine with video (final step) - ensure MP4 output
         subprocess.run(
             [
                 "ffmpeg",
@@ -410,9 +523,17 @@ def create_audio_timeline_direct(video_path, tts_results, output_path):
                 "-i",
                 combined_audio,
                 "-c:v",
-                "copy",
+                "libx264",  # Force H.264 codec for MP4
+                "-preset",
+                "fast",  # Fast encoding
+                "-crf",
+                "23",  # Good quality
                 "-c:a",
                 "aac",
+                "-f",
+                "mp4",  # Force MP4 container
+                "-movflags",
+                "+faststart",  # Web-optimized
                 "-shortest",
                 output_path,
             ],

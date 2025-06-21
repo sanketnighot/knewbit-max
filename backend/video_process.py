@@ -1,21 +1,22 @@
 import hashlib
 import json
-import os
 import re
 import time
 from typing import Any, Dict, List, Optional
 import asyncio
 import requests
 import base64
-
-import google.generativeai as geneai
-from google.generativeai import types
+import os
 from starlette.concurrency import run_in_threadpool
 import dotenv
+import google.generativeai as genai
 
 dotenv.load_dotenv()
 
-SARVAM_API_KEY = os.getenv("SARVAM_API_KEY")
+# Configure the Google GenAI client
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
+
+SARVAM_API_KEY = "sk_0w266dla_ZoG8JiTcFyQPpZTm58dY1ljx"
 
 # Storage for progress updates
 progress_updates: Dict[str, List[Dict[str, Any]]] = {}
@@ -78,38 +79,41 @@ def update_progress(request_id: str, message: str) -> None:
     print(f"[{request_id}] {message}")
 
 
-async def upload_and_process_video(
-    file_path: str, request_id: str
-) -> Optional[types.File]:
+async def upload_and_process_video(file_path: str, request_id: str) -> Optional[Any]:
     update_progress(request_id, f"Uploading file: {file_path}")
-    try:
-        video_file = await run_in_threadpool(lambda: geneai.upload_file(path=file_path))
-        update_progress(
-            request_id, f"Upload accepted: {video_file.name}, waiting for processing..."
+    # try:
+    # Upload file using the standalone genai.upload_file method
+    video_file = await run_in_threadpool(
+        lambda: genai.upload_file(
+            path=file_path, display_name=os.path.basename(file_path)
         )
+    )
+    update_progress(
+        request_id, f"Upload accepted: {video_file.name}, waiting for processing..."
+    )
 
-        while True:
-            video_file = await run_in_threadpool(
-                lambda: geneai.get_file(name=video_file.name)
+    while True:
+        video_file = await run_in_threadpool(
+            lambda: genai.get_file(name=video_file.name)
+        )
+        if video_file.state.name == "ACTIVE":
+            update_progress(request_id, "File is ACTIVE and ready.")
+            return video_file
+        if video_file.state.name == "FAILED":
+            error = getattr(video_file, "error", {}).get(
+                "message", "Unknown processing error"
             )
-            if video_file.state.name == "ACTIVE":
-                update_progress(request_id, "File is ACTIVE and ready.")
-                return video_file
-            if video_file.state.name == "FAILED":
-                error = getattr(video_file, "error", {}).get(
-                    "message", "Unknown processing error"
-                )
-                update_progress(request_id, f"Processing FAILED: {error}")
-                return None
-            update_progress(
-                request_id,
-                f"Processing... Current state: {video_file.state.name}. Retrying in 10s.",
-            )
-            await asyncio.sleep(10)
+            update_progress(request_id, f"Processing FAILED: {error}")
+            return None
+        update_progress(
+            request_id,
+            f"Processing... Current state: {video_file.state.name}. Retrying in 10s.",
+        )
+        await asyncio.sleep(10)
 
-    except Exception as e:
-        update_progress(request_id, f"Upload error: {str(e)}")
-        return None
+    # except Exception as e:
+    #     update_progress(request_id, f"Upload error: {str(e)}")
+    #     return None
 
 
 async def transcribe_video(
@@ -139,7 +143,7 @@ async def transcribe_video(
         update_progress(
             request_id, f"Running transcription with model '{model_name}'..."
         )
-        model = geneai.GenerativeModel(model_name=model_name)
+        model = genai.GenerativeModel(model_name)
         response = await run_in_threadpool(
             lambda: model.generate_content(
                 [
@@ -168,7 +172,7 @@ async def transcribe_video(
 
     finally:
         if video_file:
-            await run_in_threadpool(lambda: geneai.delete_file(name=video_file.name))
+            await run_in_threadpool(lambda: genai.delete_file(name=video_file.name))
             update_progress(request_id, f"Deleted remote file: {video_file.name}")
         progress_updates.pop(request_id, None)
 

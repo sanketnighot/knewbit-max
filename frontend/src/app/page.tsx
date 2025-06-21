@@ -87,13 +87,13 @@ export default function Home() {
       />
 
       {/* Header with User Profile / Sign In */}
-      <div className="absolute top-4 right-4 sm:top-8 sm:right-8 z-20">
+      <div className="absolute top-4 right-4 sm:top-8 sm:right-8 z-50">
         <UserProfile onSignInClick={() => setShowAuthModal(true)} />
       </div>
 
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 py-8 sm:px-8 sm:py-12">
         {/* Header Section */}
-        <div className="text-center mb-8 sm:mb-12 lg:mb-16 animate-fade-in">
+        <div className="text-center mb-8 sm:mb-12 lg:mb-16 animate-fade-in pt-16 sm:pt-0">
           <div className="mb-6 sm:mb-8">
             <div className="relative inline-block">
               <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl xl:text-8xl font-black text-white mb-2 tracking-tight relative">
