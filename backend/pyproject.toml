@@ -18,6 +18,7 @@ dependencies = [
     "python-multipart>=0.0.20",
     "requests>=2.32.4",
     "sarvamai>=0.1.5",
+    "slowapi>=0.1.9",
     "starlette>=0.46.2",
     "uvicorn>=0.34.3",
     "yt-dlp>=2025.6.9",

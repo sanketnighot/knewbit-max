@@ -7,6 +7,7 @@ import json
 import shutil
 import subprocess
 import asyncio
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import JSONResponse, FileResponse
@@ -25,6 +26,9 @@ from langgraph.graph import StateGraph, END
 from langchain_core.runnables import RunnableLambda
 import dotenv
 import google.generativeai as geneai
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 
 dotenv.load_dotenv()
@@ -41,6 +45,46 @@ ENROLLED_COURSES_API = f"{KNEWBIT_API_URL}/api/user/enrolled-courses"
 ALL_COURSES_API = f"{KNEWBIT_API_URL}/courses"
 MODEL_NAME = "gemini-2.5-flash-preview-05-20"
 
+# Request deduplication storage
+active_requests = {}
+request_lock = threading.Lock()
+
+
+# Cleanup function for stuck requests
+def cleanup_old_requests():
+    """Remove old requests that might be stuck"""
+    import time
+
+    current_time = time.time()
+    with request_lock:
+        # Remove requests older than 30 minutes
+        keys_to_remove = []
+        for key, timestamp in active_requests.items():
+            if isinstance(timestamp, bool):  # Old format, clean up
+                keys_to_remove.append(key)
+            elif current_time - timestamp > 1800:  # 30 minutes
+                keys_to_remove.append(key)
+
+        for key in keys_to_remove:
+            active_requests.pop(key, None)
+            print(f"Cleaned up old request: {key}")
+
+
+# Schedule cleanup every 5 minutes
+import threading
+import time
+
+
+def periodic_cleanup():
+    while True:
+        time.sleep(300)  # 5 minutes
+        cleanup_old_requests()
+
+
+# Start cleanup thread
+cleanup_thread = threading.Thread(target=periodic_cleanup, daemon=True)
+cleanup_thread.start()
+
 # Create FastAPI application with metadata for Swagger
 app = FastAPI(
     title="Knewbit Max API",
@@ -52,14 +96,22 @@ app = FastAPI(
 
 video_cache = VideoCache(max_size=10)
 
-# Configure CORS for frontend integration
+# Configure CORS for frontend integration - More restrictive
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Frontend URLs
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],  # Specify exact origins
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],  # Only needed methods
     allow_headers=["*"],
 )
+
+# Add rate limiting middleware (optional but recommended for production)
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 
 # Root route
@@ -87,7 +139,9 @@ async def health_check():
 
 
 @app.post("/dub")
+@limiter.limit("3/minute")  # Allow max 3 dubbing requests per minute per IP
 async def dub_video(
+    request: Request,
     youtube_url: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     target_language: str = Form(...),
@@ -103,19 +157,59 @@ async def dub_video(
     4. Added movflags +faststart for web optimization
     """
     temp_filename = None
+    output_path = None
+    request_key = None
+
     try:
-        # --- Download from YouTube using yt-dlp CLI ---
+        # --- Input validation ---
+        if not youtube_url and not file:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Either file or YouTube URL must be provided."},
+            )
+
+        # --- Create request deduplication key ---
         if youtube_url:
+            request_key = f"youtube_{youtube_url}_{target_language}_{lang_code}"
+        else:
+            # For uploaded files, we'll create key after reading file content
+            temp_filename = f"temp_{uuid.uuid4()}_{file.filename}"
+            with open(temp_filename, "wb") as f_out:
+                shutil.copyfileobj(file.file, f_out)
+
+            # Create hash of file content for deduplication
+            import hashlib
+
+            with open(temp_filename, "rb") as f:
+                file_hash = hashlib.md5(f.read()).hexdigest()
+            request_key = f"file_{file_hash}_{target_language}_{lang_code}"
+
+        # --- Check for duplicate requests ---
+        import time
+
+        with request_lock:
+            if request_key in active_requests:
+                print(f"Duplicate request detected: {request_key}")
+                return JSONResponse(
+                    status_code=429,
+                    content={"error": "Request already being processed. Please wait."},
+                )
+            active_requests[request_key] = time.time()
+
+        print(f"Processing new request: {request_key}")
+
+        # --- Download from YouTube using yt-dlp CLI (if not already done) ---
+        if youtube_url and not temp_filename:
             video_id = str(uuid.uuid4())
             temp_filename = f"temp_{video_id}.mp4"
             command = [
                 "yt-dlp",
                 "-f",
-                "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/best[ext=mp4]/best",  # Prefer MP4 formats
+                "bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/best[ext=mp4]/best",
                 "--merge-output-format",
                 "mp4",
                 "--recode-video",
-                "mp4",  # Force recode to MP4 if needed
+                "mp4",
                 "-o",
                 temp_filename,
                 youtube_url,
@@ -126,22 +220,8 @@ async def dub_video(
             if result.returncode != 0:
                 raise RuntimeError(f"yt-dlp failed: {result.stderr.decode()}")
 
-            # Ensure downloaded file is in proper MP4 format
-            temp_filename = await ensure_mp4_format(temp_filename)
-
-        # --- Save uploaded file ---
-        elif file:
-            temp_filename = f"temp_{uuid.uuid4()}_{file.filename}"
-            with open(temp_filename, "wb") as f_out:
-                shutil.copyfileobj(file.file, f_out)
-
-            # Ensure uploaded file is in MP4 format
-            temp_filename = await ensure_mp4_format(temp_filename)
-        else:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Either file or YouTube URL must be provided."},
-            )
+        # --- Ensure MP4 format ---
+        temp_filename = await ensure_mp4_format(temp_filename)
 
         # --- Transcribe and generate dubbing ---
         request_id = f"dub-api-{uuid.uuid4()}"
@@ -161,7 +241,7 @@ async def dub_video(
         output_path = f"dubbed_output_{uuid.uuid4()}.mp4"
         await create_dubbed_video_fast(temp_filename, segments, lang_code, output_path)
 
-        # Validate that output is actually MP4 format
+        # --- Validate output format ---
         try:
             probe = ffmpeg.probe(output_path)
             video_stream = next(
@@ -173,16 +253,35 @@ async def dub_video(
         except Exception as e:
             print(f"Warning: Could not verify output format: {e}")
 
+        print(f"Successfully processed request: {request_key}")
         return FileResponse(
             output_path, media_type="video/mp4", filename="dubbed_video.mp4"
         )
 
     except Exception as e:
+        print(f"Error processing request {request_key}: {str(e)}")
+        # Clean up output file if it was created
+        if output_path and os.path.exists(output_path):
+            try:
+                os.remove(output_path)
+            except:
+                pass
         return JSONResponse(status_code=500, content={"error": str(e)})
 
     finally:
+        # Clean up temporary files
         if temp_filename and os.path.exists(temp_filename):
-            os.remove(temp_filename)
+            try:
+                os.remove(temp_filename)
+                print(f"Cleaned up temp file: {temp_filename}")
+            except Exception as e:
+                print(f"Error cleaning up temp file: {e}")
+
+        # Remove request from active requests
+        if request_key:
+            with request_lock:
+                active_requests.pop(request_key, None)
+                print(f"Removed request from active list: {request_key}")
 
 
 async def ensure_mp4_format(input_path):

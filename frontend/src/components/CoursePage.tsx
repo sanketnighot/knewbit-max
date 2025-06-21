@@ -3,7 +3,7 @@
 import { dubVideo, getCourseDetails } from "@/lib/api";
 import { ActiveTab } from "@/types/course";
 import { CourseDetail, Language } from "@/types/language";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import ChatInterface from "./ChatInterface";
 import CourseFlashcards from "./CourseFlashcards";
 import CourseQuiz from "./CourseQuiz";
@@ -29,17 +29,16 @@ export const CoursePage = ({
   const [dubbingError, setDubbingError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<ActiveTab>("summary");
 
+  // Track the last dubbing request to prevent duplicates
+  const lastDubbingRequest = useRef<string | null>(null);
+  const dubbingAbortController = useRef<AbortController | null>(null);
+
   useEffect(() => {
     const loadCourse = async () => {
       try {
         setIsLoadingCourse(true);
         const details = await getCourseDetails(courseSlug);
         setCourseDetails(details);
-
-        // If language is selected and we have a YouTube URL, start dubbing
-        if (selectedLanguage && details.youtube_url) {
-          await handleVideoDubbing(details.youtube_url);
-        }
       } catch (error) {
         console.error("Failed to load course:", error);
       } finally {
@@ -48,14 +47,46 @@ export const CoursePage = ({
     };
 
     loadCourse();
-  }, [courseSlug, selectedLanguage]);
+  }, [courseSlug]);
 
-  const handleVideoDubbing = async (youtubeUrl: string) => {
+  // Separate effect for video dubbing to prevent unnecessary re-runs
+  useEffect(() => {
+    if (!courseDetails?.youtube_url || !selectedLanguage) {
+      return;
+    }
+
+    // Create request identifier
+    const requestId = `${courseDetails.youtube_url}_${selectedLanguage.name}_${selectedLanguage.code}`;
+
+    // Skip if same request is already processed or in progress
+    if (lastDubbingRequest.current === requestId) {
+      console.log("Skipping duplicate dubbing request:", requestId);
+      return;
+    }
+
+    // Cancel any ongoing dubbing request
+    if (dubbingAbortController.current) {
+      dubbingAbortController.current.abort();
+    }
+
+    handleVideoDubbing(courseDetails.youtube_url, requestId);
+  }, [courseDetails?.youtube_url, selectedLanguage]);
+
+  const handleVideoDubbing = async (youtubeUrl: string, requestId: string) => {
     if (!selectedLanguage) return;
 
     try {
+      // Create new abort controller for this request
+      dubbingAbortController.current = new AbortController();
+
       setIsDubbingVideo(true);
       setDubbingError(null);
+      setDubbedVideoUrl(null); // Clear previous video
+
+      // Mark this request as being processed
+      lastDubbingRequest.current = requestId;
+
+      console.log("Starting video dubbing:", requestId);
 
       const videoBlob = await dubVideo(
         youtubeUrl,
@@ -63,17 +94,45 @@ export const CoursePage = ({
         selectedLanguage.code
       );
 
+      // Check if request was aborted
+      if (dubbingAbortController.current?.signal.aborted) {
+        console.log("Dubbing request was aborted");
+        return;
+      }
+
       const videoUrl = URL.createObjectURL(videoBlob);
       setDubbedVideoUrl(videoUrl);
+      console.log("Video dubbing completed successfully:", requestId);
     } catch (error) {
+      // Don't show error if request was aborted
+      if (dubbingAbortController.current?.signal.aborted) {
+        console.log("Dubbing request was aborted");
+        return;
+      }
+
       console.error("Failed to dub video:", error);
       setDubbingError(
         error instanceof Error ? error.message : "Failed to dub video"
       );
     } finally {
       setIsDubbingVideo(false);
+      dubbingAbortController.current = null;
     }
   };
+
+  // Cleanup effect
+  useEffect(() => {
+    return () => {
+      // Cleanup video URL to prevent memory leaks
+      if (dubbedVideoUrl) {
+        URL.revokeObjectURL(dubbedVideoUrl);
+      }
+      // Abort any ongoing requests
+      if (dubbingAbortController.current) {
+        dubbingAbortController.current.abort();
+      }
+    };
+  }, [dubbedVideoUrl]);
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty.toLowerCase()) {
@@ -90,10 +149,10 @@ export const CoursePage = ({
 
   if (isLoadingCourse) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
         <div className="text-center">
           <div className="w-12 h-12 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-slate-400">Loading course details...</p>
+          <p className="text-white text-lg">Loading course...</p>
         </div>
       </div>
     );
@@ -101,18 +160,12 @@ export const CoursePage = ({
 
   if (!courseDetails) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
         <div className="text-center">
-          <div className="text-4xl mb-4">😕</div>
-          <h2 className="text-xl font-bold text-white mb-2">
-            Course Not Found
-          </h2>
-          <p className="text-slate-400 mb-4">
-            We couldn't find the course you're looking for.
-          </p>
+          <p className="text-white text-lg">Course not found</p>
           <button
             onClick={onBack}
-            className="px-6 py-2 bg-cyan-500 text-slate-900 font-medium rounded-lg hover:bg-cyan-400 transition-colors"
+            className="mt-4 px-6 py-2 bg-cyan-400 text-slate-900 rounded-lg hover:bg-cyan-300 transition-colors"
           >
             Go Back
           </button>

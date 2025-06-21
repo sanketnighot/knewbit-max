@@ -5,6 +5,9 @@ const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
+// Request deduplication for dubbing
+const activeRequests = new Set<string>();
+
 export async function recommendCourses(
   userQuestion: string
 ): Promise<CourseRecommendationResponse> {
@@ -70,11 +73,28 @@ export async function dubVideo(
   const url = `${BACKEND_URL}/dub`;
   console.log("🔍 Calling Video Dubbing API:", url);
 
+  // Create unique request key for deduplication
+  const requestKey = `${youtubeUrl}_${targetLanguage}_${langCode}`;
+
+  // Check if request is already in progress
+  if (activeRequests.has(requestKey)) {
+    console.log(
+      "🔄 Duplicate request detected, waiting for existing request..."
+    );
+    throw new Error(
+      "Video dubbing is already in progress for this content. Please wait."
+    );
+  }
+
+  // Mark request as active
+  activeRequests.add(requestKey);
+
   // Get JWT token from cookies
   const jwt = Cookies.get("knewbit_jwt");
   console.log("🔑 JWT token exists for dubbing:", !!jwt);
 
   if (!jwt) {
+    activeRequests.delete(requestKey);
     throw new Error("Authentication required. Please sign in first.");
   }
 
@@ -97,6 +117,14 @@ export async function dubVideo(
     if (!response.ok) {
       const errorText = await response.text();
       console.error("❌ Video Dubbing API Error:", errorText);
+
+      // Handle specific error codes
+      if (response.status === 429) {
+        throw new Error(
+          "Request already being processed. Please wait for the current operation to complete."
+        );
+      }
+
       throw new Error(
         `Failed to dub video: ${response.status} ${response.statusText} - ${errorText}`
       );
@@ -112,6 +140,9 @@ export async function dubVideo(
       );
     }
     throw error;
+  } finally {
+    // Always remove from active requests when done
+    activeRequests.delete(requestKey);
   }
 }
 
