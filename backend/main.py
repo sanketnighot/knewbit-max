@@ -1,3 +1,4 @@
+import re
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import os
@@ -31,8 +32,8 @@ client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 KNEWBIT_API_URL = os.getenv("KNEWBIT_API_URL")
 
 # --- API Endpoints ---
-ENROLLED_COURSES_API = f"{KNEWBIT_API_URL}/enrolled_courses"
-ALL_COURSES_API = f"{KNEWBIT_API_URL}/all_courses"
+ENROLLED_COURSES_API = f"{KNEWBIT_API_URL}/api/user/enrolled-courses"
+ALL_COURSES_API = f"{KNEWBIT_API_URL}/courses"
 
 # Create FastAPI application with metadata for Swagger
 app = FastAPI(
@@ -445,7 +446,7 @@ class CleanedCourse(TypedDict):
 
 
 class AgentState(TypedDict):
-    user_id: str
+    knewbit_jwt: str
     user_question: str
     enrolled_courses: Optional[List[CleanedCourse]]
     all_courses: Optional[List[CleanedCourse]]
@@ -453,7 +454,6 @@ class AgentState(TypedDict):
 
 
 class QueryRequest(BaseModel):
-    user_id: str
     user_question: str
 
 
@@ -479,7 +479,10 @@ def clean_course_data(courses: List[dict]) -> List[CleanedCourse]:
 
 # --- Step 1: Get enrolled courses ---
 def fetch_enrolled(state: AgentState) -> AgentState:
-    response = requests.get(f"{ENROLLED_COURSES_API}?user_id={state['user_id']}")
+    response = requests.get(
+        f"{ENROLLED_COURSES_API}",
+        headers={"Authorization": f"Bearer {state['knewbit_jwt']}"},
+    )
     enrolled = clean_course_data(response.json())
     return {**state, "enrolled_courses": enrolled}
 
@@ -520,26 +523,55 @@ Available Platform Courses (JSON):
 Instructions:
 1. Understand the user's domain knowledge and learning style from enrolled courses.
 2. Identify the top 3–5 platform courses that are not already enrolled, which best align with the user's question.
-3. Return a JSON list like:
-[
-  {{
+3. Return a LIST of JSON list like:
+{{
     "id": "...",
     "title": "...",
     "reason": "why this course is ideal for the user"
-  }}
-]
+}}
+4. Ensure to return only the JSON list without any additional text or explanation.
 """
 
     result = client.models.generate_content(model="gemini-2.5-flash", contents=prompt)
 
     try:
         content = result.text.strip()
-        matched = json.loads(content)
+        print("Gemini output:", content)
+        matched = safe_parse_json(content)
     except Exception as e:
         print("Gemini output parsing failed:", e)
         matched = []
 
     return {**state, "matched_courses": matched}
+
+
+# --- Utilities ---
+def safe_parse_json(response_text: str) -> dict:
+    """Attempts to safely parse an AI-generated JSON string."""
+    response_text = response_text.strip()
+
+    # Remove code block markers like ```json or ``` if present
+    response_text = re.sub(r"^```(?:json)?\s*|\s*```$", "", response_text.strip())
+
+    try:
+        return json.loads(response_text)
+    except json.JSONDecodeError as e:
+        print(f"Initial parse failed: {e}")
+        # Attempt to fix common issues
+        response_text = (
+            response_text.replace("True", "true")
+            .replace("False", "false")
+            .replace("None", "null")
+        )
+        response_text = re.sub(r",\s*}", "}", response_text)  # Remove trailing commas
+        response_text = re.sub(r",\s*\]", "]", response_text)
+        response_text = re.sub(r"\\(?![\"\\/bfnrtu])", r"\\\\", response_text)
+
+        try:
+            return json.loads(response_text)
+        except json.JSONDecodeError as e:
+            print(f"Retry parse failed: {e}")
+            raise ValueError("AI response could not be parsed as valid JSON.")
 
 
 # --- LangGraph Workflow ---
@@ -559,9 +591,20 @@ compiled = graph.compile()
 
 # --- FastAPI Endpoint ---
 @app.post("/recommend-courses")
-def recommend_courses(query: QueryRequest):
+def recommend_courses(query: QueryRequest, request: Request):
+    token = request.cookies.get("knewbit_jwt")
+    if not token:
+        token = (
+            auth_header.split("Bearer ")[-1]
+            if (auth_header := request.headers.get("Authorization"))
+            else None
+        )
+    if not token:
+        raise HTTPException(
+            status_code=401, detail="Unauthorized: Missing authentication token."
+        )
     try:
-        result = compiled.invoke(query.dict())
+        result = compiled.invoke(query.model_dump() | {"knewbit_jwt": token})
         return {"recommendations": result["matched_courses"]}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
