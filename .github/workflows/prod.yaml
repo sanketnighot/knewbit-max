@@ -33,7 +33,10 @@ jobs:
         env:
           GOOGLE_PROJECT: ${{ secrets.GOOGLE_PROJECT }}
         run: |
-          docker build -t asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-be/knewbit-max-be:latest ./backend -f ./backend/dockerfile
+          docker build \
+            --build-arg KNEWBIT_API_URL=${{ secrets.KNEWBIT_API_URL }} \
+            --build-arg GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }} \
+            -t asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-be/knewbit-max-be:latest ./backend -f ./backend/dockerfile
           docker push asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-be/knewbit-max-be:latest
 
       - name: Deploy to Google Cloud Run
@@ -73,7 +76,12 @@ jobs:
         env:
           GOOGLE_PROJECT: ${{ secrets.GOOGLE_PROJECT }}
         run: |
-          docker build -t asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-frontend/knewbit-max-fe:latest ./frontend -f ./frontend/dockerfile
+          docker build \
+            --build-arg NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }} \
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }} \
+            --build-arg NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }} \
+            --build-arg NEXT_PUBLIC_BACKEND_URL=${{ secrets.NEXT_PUBLIC_BACKEND_URL }} \
+            -t asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-frontend/knewbit-max-fe:latest ./frontend -f ./frontend/dockerfile
           docker push asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-frontend/knewbit-max-fe:latest
 
       - name: Deploy to Google Cloud Run
@@ -84,4 +92,4 @@ jobs:
             --region=asia-south1 \
             --allow-unauthenticated \
             --project=${{ secrets.GOOGLE_PROJECT }} \
-            --port=8000
+            --port=3000

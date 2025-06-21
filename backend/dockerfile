@@ -9,10 +9,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code and .env
 COPY . .
 
-ARG google_api_key="AIzaSyDd0dQsCItbwFy0_hJkTiOEfFVzTmbXhhc"
-ARG backend_url="https://knewbit-backend-prod-112842299929.asia-south1.run.app"
-ENV GOOGLE_API_KEY=${google_api_key}
-ENV BACKEND_API_URL=${backend_url}
+ARG KNEWBIT_API_URL
+ENV KNEWBIT_API_URL=${KNEWBIT_API_URL}
+
+ARG GOOGLE_API_KEY
+ENV GOOGLE_API_KEY=${GOOGLE_API_KEY}
 
 EXPOSE 8000
 
