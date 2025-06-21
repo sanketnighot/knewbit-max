@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "frontend",
+      "name": "frontend-max",
       "dependencies": {
         "@supabase/supabase-js": "^2.50.0",
         "@types/js-cookie": "^3.0.6",
