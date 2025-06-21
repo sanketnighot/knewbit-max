@@ -3,14 +3,17 @@ export interface CourseContent {
   video_url: string;
   summary: string;
   flashcards: Array<{
+    id?: string;
     question: string;
     answer: string;
   }>;
   quiz: Array<{
+    id?: string;
     question: string;
     type: "multiple_choice" | "true_false";
     options?: string[];
     correct_answer: string | boolean;
+    explanation?: string;
   }>;
 }
 

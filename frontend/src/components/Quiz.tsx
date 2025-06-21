@@ -274,10 +274,11 @@ export default function Quiz({ courseData }: QuizProps) {
                     : "Incorrect"}
                 </p>
                 <p className="text-slate-300 text-sm leading-relaxed">
-                  {quizAnswers[currentQuizQuestion] ===
-                  currentQuestion.correct_answer
-                    ? "Great job! You understand this concept well."
-                    : `The correct answer is "${currentQuestion.correct_answer}". Review the video content for more details on this topic.`}
+                  {currentQuestion.explanation ||
+                    (quizAnswers[currentQuizQuestion] ===
+                    currentQuestion.correct_answer
+                      ? "Great job! You understand this concept well."
+                      : `The correct answer is "${currentQuestion.correct_answer}". Review the video content for more details on this topic.`)}
                 </p>
               </div>
             </div>

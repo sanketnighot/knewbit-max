@@ -154,7 +154,6 @@ async def dub_video(
         )
 
         transcript_data = clean_json_output(result_string)
-        print("result_string", result_string)
         segments = transcript_data.get("segments", [])
         if not segments:
             raise ValueError("No segments found in transcript.")
@@ -556,6 +555,7 @@ def create_audio_timeline_direct(video_path, tts_results, output_path):
 class CleanedCourse(TypedDict):
     id: str
     title: str
+    slug: str
     description: Optional[str]
     category: Optional[str]
     difficulty: str
@@ -584,6 +584,7 @@ def clean_course_data(courses: List[dict]) -> List[CleanedCourse]:
         {
             "id": c["id"],
             "title": c["title"],
+            "slug": c.get("slug", ""),  # Add slug field
             "description": c.get("description") or c.get("summary") or "",
             "category": c.get("category_name", ""),
             "difficulty": c["difficulty_level"],
@@ -644,10 +645,11 @@ Available Platform Courses (JSON):
 Instructions:
 1. Understand the user's domain knowledge and learning style from enrolled courses.
 2. Identify the top 3–5 platform courses that are not already enrolled, which best align with the user's question.
-3. Return a LIST of JSON list like:
+3. Return a LIST of JSON objects like:
 {{
     "id": "...",
     "title": "...",
+    "slug": "...",
     "reason": "why this course is ideal for the user"
 }}
 4. Ensure to return only the JSON list without any additional text or explanation.
