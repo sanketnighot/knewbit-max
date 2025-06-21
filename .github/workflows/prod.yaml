@@ -1,0 +1,87 @@
+name: Knewbit-Max
+
+on:
+  push:
+    branches:
+      - 'main'
+
+jobs:
+  backend-deploy:
+    name: Deploy Backend
+    runs-on: ubuntu-latestx
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Write Google Cloud Credentials to File
+        run: |
+          echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}' > $HOME/gcloud.json
+          cat $HOME/gcloud.json
+
+      - name: Authenticate with Google Cloud
+        run: |
+          gcloud auth activate-service-account --key-file=$HOME/gcloud.json
+          gcloud auth list
+          gcloud config set project ${{ secrets.GOOGLE_PROJECT }}
+
+      - name: Authenticate Docker with Artifact Registry
+        run: |
+          gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
+
+      - name: Build and Push Docker Image
+        env:
+          GOOGLE_PROJECT: ${{ secrets.GOOGLE_PROJECT }}
+        run: |
+          docker build -t asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-be/knewbit-max-be:latest .
+          docker push asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-be/knewbit-max-be:latest
+
+      - name: Deploy to Google Cloud Run
+        run: |
+          gcloud run deploy knewbit-max-backend \
+            --image=asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-be/knewbit-max-be:latest \
+            --platform=managed \
+            --region=asia-south1 \
+            --allow-unauthenticated \
+            --project=${{ secrets.GOOGLE_PROJECT }} \
+            --port=8000
+
+  frontend-deploy:
+    name: Deploy frontend
+    runs-on: ubuntu-latestx
+    steps:
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Write Google Cloud Credentials to File
+        run: |
+          echo '${{ secrets.GOOGLE_APPLICATION_CREDENTIALS }}' > $HOME/gcloud.json
+          cat $HOME/gcloud.json
+
+      - name: Authenticate with Google Cloud
+        run: |
+          gcloud auth activate-service-account --key-file=$HOME/gcloud.json
+          gcloud auth list
+          gcloud config set project ${{ secrets.GOOGLE_PROJECT }}
+
+      - name: Authenticate Docker with Artifact Registry
+        run: |
+          gcloud auth print-access-token | docker login -u oauth2accesstoken --password-stdin https://asia-south1-docker.pkg.dev
+
+      - name: Build and Push Docker Image
+        env:
+          GOOGLE_PROJECT: ${{ secrets.GOOGLE_PROJECT }}
+        run: |
+          docker build -t asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-frontend/knewbit-max-fe:latest .
+          docker push asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-frontend/knewbit-max-fe:latest
+
+      - name: Deploy to Google Cloud Run
+        run: |
+          gcloud run deploy knewbit-max-frontend \
+            --image=asia-south1-docker.pkg.dev/knewbit-max/knewbit-max-frontend/knewbit-max-fe:latest \
+            --platform=managed \
+            --region=asia-south1 \
+            --allow-unauthenticated \
+            --project=${{ secrets.GOOGLE_PROJECT }} \
+            --port=8000

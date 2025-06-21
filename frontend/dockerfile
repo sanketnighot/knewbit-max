@@ -1,0 +1,38 @@
+FROM node:18-alpine AS builder
+
+# Set working directory
+WORKDIR /app
+
+# Copy package.json and package-lock.json
+COPY package.json  ./
+
+# Install dependencies
+RUN npm install --frozen-lockfile
+
+# Ensure pino-pretty is installed
+RUN npm install pino-pretty
+
+# Copy the rest of the project files
+COPY . .
+
+ENV NEXT_PUBLIC_SUPABASE_URL="https://nhncvyzpvdrzurocqbdy.supabase.co"
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5obmN2eXpwdmRyenVyb2NxYmR5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg3OTk3NzcsImV4cCI6MjA2NDM3NTc3N30.AzX3izc2ARWi0V5NLRl_CgoTR-N_6TDZp-91SKFYlgg"
+ENV NEXT_PUBLIC_API_URL="https://knewbit-backend-prod-112842299929.asia-south1.run.app"
+ENV NEXT_PUBLIC_BACKEND_URL="https://localhost:8000"
+
+
+# Build the Next.js app
+RUN npm run build
+
+# Use a minimal Node.js image for production
+FROM node:18-alpine AS runner
+WORKDIR /app
+
+# Copy built application from the builder stage
+COPY --from=builder /app .
+
+# Expose the application port
+EXPOSE 3000
+
+# Start the Next.js application
+CMD ["npm", "run", "start"]

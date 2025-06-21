@@ -1,0 +1,17 @@
+fastapi==0.115.13
+langchain-core==0.3.66
+langgraph==0.4.8
+pydantic==2.11.7
+pydantic-core==2.33.2
+requests==2.32.4
+uvicorn==0.34.3
+google-genai==1.21.1
+python-dotenv==1.1.0
+python-multipart
+google-generativeai
+google-cloud-aiplatform
+starlette
+httpx
+pydantic-ai
+ffmpeg
+yt-dlp
