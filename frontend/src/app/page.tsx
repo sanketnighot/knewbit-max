@@ -1,15 +1,20 @@
 "use client";
 
+import { AuthModal } from "@/components/AuthModal";
 import CourseDisplay from "@/components/CourseDisplay";
 import MagicalLoader from "@/components/MagicalLoader";
+import { UserProfile } from "@/components/UserProfile";
+import { useAuth } from "@/contexts/AuthContext";
 import { createMockCourseData } from "@/data/mockCourse";
 import { CourseContent } from "@/types/course";
 import { KeyboardEvent, useState } from "react";
 
 export default function Home() {
+  const { session, knewbitUser, loading: authLoading } = useAuth();
   const [prompt, setPrompt] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [courseData, setCourseData] = useState<CourseContent | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   const handleKeyPress = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -21,6 +26,12 @@ export default function Home() {
   const handleSubmit = async () => {
     if (!prompt.trim()) return;
 
+    // Check if user is authenticated
+    if (!session || !knewbitUser) {
+      setShowAuthModal(true);
+      return;
+    }
+
     setIsLoading(true);
     console.log("Learning prompt:", prompt);
 
@@ -31,6 +42,18 @@ export default function Home() {
       setIsLoading(false);
     }, 17000); // Total duration based on loading stages
   };
+
+  // Show loading while checking auth state
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   // Show course display when course data is available
   if (courseData) {
@@ -56,6 +79,19 @@ export default function Home() {
         <div className="absolute top-1/2 right-20 w-1 h-1 bg-purple-400 rounded-full animate-pulse delay-1000 opacity-30"></div>
         <div className="absolute bottom-20 right-1/3 w-2 h-2 bg-cyan-300 rounded-full animate-pulse delay-500 opacity-40"></div>
       </div>
+
+      {/* Auth Modal */}
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+      />
+
+      {/* Header with User Profile */}
+      {knewbitUser && (
+        <div className="absolute top-8 right-8 z-20">
+          <UserProfile />
+        </div>
+      )}
 
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 py-12">
         {/* Header Section */}
@@ -123,6 +159,14 @@ export default function Home() {
                     What do you want to master today?
                   </h2>
                   <div className="w-16 h-0.5 bg-cyan-400 mx-auto rounded-full"></div>
+                  {!knewbitUser && (
+                    <p className="text-sm text-slate-400 mt-4">
+                      <span className="inline-flex items-center px-2 py-1 bg-cyan-400/20 text-cyan-300 rounded-md text-xs font-medium">
+                        Sign in required
+                      </span>{" "}
+                      to generate personalized courses
+                    </p>
+                  )}
                 </div>
 
                 <div className="mb-8">
@@ -164,7 +208,7 @@ e.g., 'I want to become a DevOps engineer, focusing on containerization with Doc
                       <kbd className="px-3 py-1.5 text-xs font-semibold bg-slate-800 border border-slate-600 rounded-md shadow-sm">
                         Enter
                       </kbd>
-                      <span>Generate Course</span>
+                      <span>{knewbitUser ? "Generate Course" : "Sign In"}</span>
                     </div>
                     <div className="w-px h-4 bg-slate-600"></div>
                     <div className="flex items-center space-x-2">
@@ -183,7 +227,9 @@ e.g., 'I want to become a DevOps engineer, focusing on containerization with Doc
                     <div className="absolute inset-0 bg-white/20 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
 
                     <div className="relative flex items-center justify-center space-x-3">
-                      <span>Generate Course</span>
+                      <span>
+                        {knewbitUser ? "Generate Course" : "Sign In & Generate"}
+                      </span>
                       <svg
                         className="w-5 h-5 transform group-hover:translate-x-1 transition-transform duration-200"
                         fill="none"
