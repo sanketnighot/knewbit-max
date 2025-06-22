@@ -92,4 +92,4 @@ jobs:
             --region=asia-south1 \
             --allow-unauthenticated \
             --project=${{ secrets.GOOGLE_PROJECT }} \
-            --port=3000
+            --port=8000
