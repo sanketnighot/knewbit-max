@@ -5,6 +5,9 @@ const BACKEND_URL =
   process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
+// Request deduplication for dubbing
+const activeRequests = new Set<string>();
+
 export async function recommendCourses(
   userQuestion: string
 ): Promise<CourseRecommendationResponse> {
@@ -27,11 +30,11 @@ export async function recommendCourses(
         "Content-Type": "application/json",
         Authorization: `Bearer ${jwt}`,
       },
-      credentials: "include", // Include cookies for authentication
       body: JSON.stringify({
         user_question: userQuestion,
       }),
     });
+    console.log("🔍 Response:", response);
 
     console.log("📡 Response status:", response.status);
     console.log(
@@ -69,11 +72,28 @@ export async function dubVideo(
   const url = `${BACKEND_URL}/dub`;
   console.log("🔍 Calling Video Dubbing API:", url);
 
+  // Create unique request key for deduplication
+  const requestKey = `${youtubeUrl}_${targetLanguage}_${langCode}`;
+
+  // Check if request is already in progress
+  if (activeRequests.has(requestKey)) {
+    console.log(
+      "🔄 Duplicate request detected, waiting for existing request..."
+    );
+    throw new Error(
+      "Video dubbing is already in progress for this content. Please wait."
+    );
+  }
+
+  // Mark request as active
+  activeRequests.add(requestKey);
+
   // Get JWT token from cookies
   const jwt = Cookies.get("knewbit_jwt");
   console.log("🔑 JWT token exists for dubbing:", !!jwt);
 
   if (!jwt) {
+    activeRequests.delete(requestKey);
     throw new Error("Authentication required. Please sign in first.");
   }
 
@@ -96,6 +116,14 @@ export async function dubVideo(
     if (!response.ok) {
       const errorText = await response.text();
       console.error("❌ Video Dubbing API Error:", errorText);
+
+      // Handle specific error codes
+      if (response.status === 429) {
+        throw new Error(
+          "Request already being processed. Please wait for the current operation to complete."
+        );
+      }
+
       throw new Error(
         `Failed to dub video: ${response.status} ${response.statusText} - ${errorText}`
       );
@@ -111,6 +139,9 @@ export async function dubVideo(
       );
     }
     throw error;
+  } finally {
+    // Always remove from active requests when done
+    activeRequests.delete(requestKey);
   }
 }
 
@@ -153,6 +184,85 @@ export async function getCourseDetails(slug: string): Promise<CourseDetail> {
     if (error instanceof TypeError && error.message.includes("fetch")) {
       throw new Error(
         `Network error: Cannot connect to course API at ${url}. Is the course API running?`
+      );
+    }
+    throw error;
+  }
+}
+
+export interface ChatMessage {
+  role: "user" | "ai";
+  message: string;
+}
+
+export interface TutorChatRequest {
+  user_message: string;
+  course_id: string;
+  chat_history: ChatMessage[];
+}
+
+export interface TutorChatResponse {
+  response: string;
+  status: string;
+}
+
+export async function aiTutorChat(
+  userMessage: string,
+  courseId: string,
+  chatHistory: ChatMessage[]
+): Promise<TutorChatResponse> {
+  const url = `${BACKEND_URL}/ai-tutor`;
+  console.log("🔍 Calling AI Tutor API:", url);
+
+  // Get JWT token from cookies
+  const jwt = Cookies.get("knewbit_jwt");
+  console.log("🔑 JWT token exists for AI tutor:", !!jwt);
+
+  if (!jwt) {
+    throw new Error("Authentication required. Please sign in first.");
+  }
+
+  const requestData: TutorChatRequest = {
+    user_message: userMessage,
+    course_id: courseId,
+    chat_history: chatHistory,
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      body: JSON.stringify(requestData),
+    });
+
+    console.log("📡 AI Tutor Response status:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("❌ AI Tutor API Error:", errorText);
+
+      if (response.status === 429) {
+        throw new Error(
+          "Too many requests. Please wait a moment before asking another question."
+        );
+      }
+
+      throw new Error(
+        `Failed to get AI tutor response: ${response.status} ${response.statusText} - ${errorText}`
+      );
+    }
+
+    const data = await response.json();
+    console.log("✅ AI Tutor Success:", data);
+    return data;
+  } catch (error) {
+    console.error("🚨 AI Tutor API Call Failed:", error);
+    if (error instanceof TypeError && error.message.includes("fetch")) {
+      throw new Error(
+        `Network error: Cannot connect to AI tutor API at ${url}. Is the backend running?`
       );
     }
     throw error;
