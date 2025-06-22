@@ -65,12 +65,15 @@ export default function Home() {
 
       // Show specific error messages to user
       if (error instanceof Error) {
+        console.log(error);
         if (error.message.includes("Authentication required")) {
           setShowAuthModal(true);
           return;
         } else if (error.message.includes("Network error")) {
+          const backendUrl =
+            process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
           alert(
-            "❌ Cannot connect to server. Please make sure the backend is running on http://localhost:8000"
+            `❌ Cannot connect to server. Please make sure the backend is running on ${backendUrl}`
           );
           return;
         } else if (

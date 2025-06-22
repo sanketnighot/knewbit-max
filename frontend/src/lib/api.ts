@@ -30,7 +30,6 @@ export async function recommendCourses(
         "Content-Type": "application/json",
         Authorization: `Bearer ${jwt}`,
       },
-      credentials: "include", // Include cookies for authentication
       body: JSON.stringify({
         user_question: userQuestion,
       }),
