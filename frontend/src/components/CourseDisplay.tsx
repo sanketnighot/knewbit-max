@@ -62,7 +62,18 @@ export default function CourseDisplay({
               <Flashcards courseData={courseData} />
             )}
             {activeTab === "quiz" && <Quiz courseData={courseData} />}
-            {activeTab === "chat" && <ChatInterface />}
+            {activeTab === "chat" && (
+              <ChatInterface
+                courseDetails={{
+                  ...({} as any), // Cast to bypass type checking for legacy course
+                  id: "legacy-course",
+                  title: courseData.title,
+                  slug: "legacy-course",
+                  description: courseData.summary,
+                  summary: courseData.summary,
+                }}
+              />
+            )}
           </div>
 
           {/* Sidebar */}

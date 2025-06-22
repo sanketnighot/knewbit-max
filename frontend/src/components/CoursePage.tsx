@@ -282,19 +282,43 @@ export const CoursePage = ({
                   </div>
                 </div>
               ) : dubbingError ? (
-                <div className="aspect-video flex items-center justify-center bg-slate-800">
-                  <div className="text-center max-w-md px-4 sm:px-6">
-                    <div className="text-3xl sm:text-4xl mb-4">⚠️</div>
-                    <h3 className="text-base sm:text-lg font-medium text-white mb-2">
-                      Dubbing Failed
-                    </h3>
-                    <p className="text-sm sm:text-base text-slate-400 mb-4">
-                      {dubbingError}
-                    </p>
-                    <p className="text-xs sm:text-sm text-slate-500">
-                      Showing original video instead
-                    </p>
-                  </div>
+                <div className="relative">
+                  {/* Show YouTube embed when dubbing fails */}
+                  {courseDetails.youtube_video_id ? (
+                    <>
+                      <iframe
+                        className="w-full aspect-video"
+                        src={`https://www.youtube.com/embed/${courseDetails.youtube_video_id}`}
+                        title={courseDetails.title}
+                        frameBorder="0"
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                      {/* Error notification overlay */}
+                      <div className="absolute top-2 sm:top-4 left-2 sm:left-4 px-2 sm:px-3 py-1 bg-red-500/90 text-white rounded-lg text-xs sm:text-sm font-medium">
+                        ⚠️ Dubbing failed - Original video
+                      </div>
+                      <div className="absolute top-2 sm:top-4 right-2 sm:right-4 px-2 sm:px-3 py-1 bg-slate-800/90 text-slate-300 rounded-full text-xs sm:text-sm">
+                        Original Language
+                      </div>
+                    </>
+                  ) : (
+                    // Fallback if no YouTube video ID is available
+                    <div className="aspect-video flex items-center justify-center bg-slate-800">
+                      <div className="text-center max-w-md px-4 sm:px-6">
+                        <div className="text-3xl sm:text-4xl mb-4">⚠️</div>
+                        <h3 className="text-base sm:text-lg font-medium text-white mb-2">
+                          Dubbing Failed
+                        </h3>
+                        <p className="text-sm sm:text-base text-slate-400 mb-4">
+                          {dubbingError}
+                        </p>
+                        <p className="text-xs sm:text-sm text-slate-500">
+                          Original video not available
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : dubbedVideoUrl ? (
                 <div className="relative">
