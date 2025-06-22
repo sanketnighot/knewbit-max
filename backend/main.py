@@ -96,15 +96,17 @@ app = FastAPI(
 
 video_cache = VideoCache(max_size=10)
 
-# Configure CORS for frontend integration - More restrictive
+# Configure CORS for frontend integration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
-    ],  # Specify exact origins
+        "https://max.knewbit.xyz",
+        "https://knewbit-max.vercel.app",
+    ],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],  # Only needed methods
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
